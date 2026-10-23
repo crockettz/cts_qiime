@@ -1,8 +1,53 @@
-# cts_qiime2
+# cts_qiime
 
-QIIME 2 (amplicon distribution) packaged for the KBase CDM Task Service (CTS).
+QIIME 2 (amplicon distribution, 2026.1) packaged for the KBase CDM Task Service (CTS).
 
-- Entrypoint runs `qiime <args>`; all scratch/config writes go to `$TMPDIR`.
-- Write all outputs under the CTS output mount (e.g. `/out`).
-- Build: push a git tag → GitHub Actions publishes `ghcr.io/<owner>/cts_qiime2:<tag>`.
-  Make the package **public** in GitHub so the CTS can pull it.
+- `entrypoint.sh pipeline <fastq.gz>...` runs the 454 single-end 16S pipeline
+  (`pipeline.sh`): import → cutadapt primer trim → DADA2 `denoise-pyro` → SILVA
+  classification → export. Settings are environment variables; see the header of
+  `pipeline.sh`. Defaults target the 926F/1392R primers.
+- Any other arguments are passed straight to `qiime`.
+- All scratch/config writes go to `$TMPDIR`; outputs go to `$OUT_DIR` (default `/out`):
+  - `qiime/*.qza`: QIIME artifacts
+  - `export/feature-table.tsv` + `.biom`, `export/dna-sequences.fasta`,
+    `export/taxonomy.tsv`, `export/denoising-stats.tsv`
+  - `manifest.tsv`: sample ID → input file
+
+## Build
+
+Pushes and PRs build the image and run the pipeline on `test/data` (3 × 2000-read 454
+samples, taxonomy skipped). Pushing a git tag also publishes
+`ghcr.io/crockettz/cts_qiime:<tag>`.
+
+## Reference data
+
+The classifier is QIIME's pre-trained SILVA 138 99% Naive Bayes classifier for
+scikit-learn 1.4.2 (matches QIIME 2026.1):
+https://data.qiime2.org/classifiers/sklearn-1.4.2/silva/silva-138-99-nb-classifier.qza
+
+Register it with the CTS as refdata (no unpacking). The pipeline expects it at
+`/reference_data/silva-138-99-nb-classifier.qza`; set `CLASSIFIER` if it lands elsewhere.
+
+## Example CTS job
+
+DADA2 must see every sample of a sequencing run together, so use one container.
+
+```json
+{
+  "cluster": "perlmutter-jaws",
+  "image": "ghcr.io/crockettz/cts_qiime@sha256:<digest>",
+  "params": {
+    "input_mount_point": "/in",
+    "output_mount_point": "/out",
+    "refdata_mount_point": "/reference_data",
+    "args": ["pipeline", {"type": "input_files", "input_files_format": "space_separated_list"}],
+    "environment": {"THREADS": "8", "TRUNC_LEN": "400"}
+  },
+  "input_files": ["<bucket>/pwdna/fastq/SRR573806.fastq.gz", "..."],
+  "output_dir": "<bucket>/cts-output/qiime_test",
+  "runtime": "PT2H",
+  "cpus": 8,
+  "num_containers": 1,
+  "memory": "64GB"
+}
+```

@@ -1,6 +1,7 @@
 #!/bin/bash
 # CTS entrypoint: point every writable location at the temp dir (CTS only permits
-# writes to the output mount and temp), then pass args straight to `qiime`.
+# writes to the output mount and temp), then run the pipeline (`pipeline <fastqs...>`)
+# or pass args straight to `qiime`.
 set -euo pipefail
 
 export TMPDIR="${TMPDIR:-/tmp}"
@@ -10,4 +11,8 @@ export XDG_CACHE_HOME="$HOME/.cache"
 export MPLCONFIGDIR="$HOME/.matplotlib"
 mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$MPLCONFIGDIR"
 
+if [[ "${1:-}" == "pipeline" ]]; then
+    shift
+    exec /opt/cts/pipeline.sh "$@"
+fi
 exec qiime "$@"
