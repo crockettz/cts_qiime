@@ -104,7 +104,8 @@ qiime dada2 denoise-pyro \
     --p-n-threads "$THREADS" \
     --o-table "$QZA/table.qza" \
     --o-representative-sequences "$QZA/rep-seqs.qza" \
-    --o-denoising-stats "$QZA/denoising-stats.qza"
+    --o-denoising-stats "$QZA/denoising-stats.qza" \
+    --o-base-transition-stats "$QZA/base-transition-stats.qza"
 
 # --- Taxonomy ------------------------------------------------------------------------
 if [[ "$SKIP_TAXONOMY" != "true" ]]; then
