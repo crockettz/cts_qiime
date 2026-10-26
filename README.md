@@ -13,6 +13,41 @@ QIIME 2 (amplicon distribution, 2026.1) packaged for the KBase CDM Task Service 
     `export/taxonomy.tsv`, `export/denoising-stats.tsv`
   - `manifest.tsv`: sample ID → input file
 
+## Parameters
+
+Set parameters in the CTS job's `params.environment`. Any QIIME parameter of the three
+steps can be set as `<STEP>_<PARAM>`. STEP is `CUTADAPT` (`cutadapt trim-single`), `DADA2`
+(`dada2 denoise-pyro`) or `CLASSIFY` (`feature-classifier classify-sklearn`). PARAM is the
+`--p-` name in upper case with `-` → `_`:
+
+```json
+"environment": {
+  "DADA2_TRUNC_LEN": "400",
+  "DADA2_POOLING_METHOD": "pseudo",
+  "DADA2_ALLOW_ONE_OFF": "true",
+  "CUTADAPT_FRONT": "AAACTYAAAKGAATTGRCGG,GTGCCAGCMGCCGCGGTAA",
+  "CLASSIFY_CONFIDENCE": "0.8"
+}
+```
+
+- Parameters you don't set aren't passed, so **QIIME's defaults apply**. See
+  `qiime <step> --help` for the full lists.
+- `true`/`false` become `--p-x`/`--p-no-x`, and commas separate multiple values. CTS values
+  can't contain spaces.
+- Misspelled names fail with QIIME's "No such option … Did you mean" error. The options each
+  step used are logged, and the `.qza` provenance records them.
+
+The pipeline sets defaults only where QIIME has none:
+- `CUTADAPT_FRONT`: 926F, `AAACTYAAAKGAATTGRCGG`
+- `CUTADAPT_ADAPTER`: 1392R reverse complement, `GYACACACCGCCCGT`
+- `DADA2_TRUNC_LEN`: 400. Reads shorter than this are dropped; 0 turns truncation and
+  length filtering off.
+
+Pipeline settings: `THREADS` (default all CPUs; it sets cutadapt `cores`, DADA2 `n_threads`
+and classifier `n_jobs` unless the step sets its own), `SKIP_TAXONOMY`, `CLASSIFIER`. Older
+shorthands still work: `TRUNC_LEN`, `TRIM_LEFT`, `MAX_EE`, `FWD_PRIMER`, `REV_PRIMER_RC`,
+`DISCARD_UNTRIMMED`.
+
 ## Build
 
 Pushes and PRs build the image and run the pipeline on `test/data` (3 × 2000-read 454

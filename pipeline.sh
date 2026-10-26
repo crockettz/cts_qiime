@@ -10,34 +10,77 @@
 # model from the whole run. The sample ID is the file name minus .fastq.gz / .fq.gz; for
 # paired runs (_1/_2) only the _1 read is used.
 #
-# Settings (environment variables, all optional):
+# Settings are environment variables (CTS job "params.environment"), all optional.
+#
+# Any QIIME parameter of the three steps can be set as <STEP>_<PARAM>, where STEP is
+#   CUTADAPT  (qiime cutadapt trim-single)
+#   DADA2     (qiime dada2 denoise-pyro)
+#   CLASSIFY  (qiime feature-classifier classify-sklearn)
+# and PARAM is the --p-<param> name in upper case with "-" → "_". For example
+#   DADA2_POOLING_METHOD=pseudo      → --p-pooling-method pseudo
+#   CLASSIFY_CONFIDENCE=0.8          → --p-confidence 0.8
+#   DADA2_ALLOW_ONE_OFF=true         → --p-allow-one-off      (false → --p-no-allow-one-off)
+#   CUTADAPT_FRONT=SEQ1,SEQ2         → --p-front SEQ1 SEQ2    (commas separate values)
+# Parameters you don't set aren't passed, so QIIME's own defaults apply (see
+# `qiime <step> --help`). QIIME rejects misspelled names.
+#
+# Values the pipeline sets because QIIME has no default for them:
+#   CUTADAPT_FRONT     5' primer                  (default 926F AAACTYAAAKGAATTGRCGG)
+#   CUTADAPT_ADAPTER   3' primer, reverse compl.  (default 1392R → GYACACACCGCCCGT)
+#   DADA2_TRUNC_LEN    truncation length; shorter reads are dropped; 0 = none (default 400)
+# Shorthands kept from earlier versions: FWD_PRIMER, REV_PRIMER_RC, TRUNC_LEN, TRIM_LEFT,
+# MAX_EE, DISCARD_UNTRIMMED (= CUTADAPT_FRONT, CUTADAPT_ADAPTER, DADA2_TRUNC_LEN,
+# DADA2_TRIM_LEFT, DADA2_MAX_EE, CUTADAPT_DISCARD_UNTRIMMED).
+#
+# Pipeline settings:
+#   THREADS            cutadapt cores, DADA2 threads, classifier jobs (default: all CPUs;
+#                      a <STEP>_CORES/_N_THREADS/_N_JOBS setting overrides it per step)
+#   SKIP_TAXONOMY      "true" to stop after denoising      (default false)
+#   CLASSIFIER         classifier .qza                     (default $REFDATA_DIR/silva-138-99-nb-classifier.qza)
 #   OUT_DIR            output directory                    (default /out)
 #   REFDATA_DIR        CTS refdata mount point             (default /reference_data)
-#   CLASSIFIER         classifier .qza                     (default $REFDATA_DIR/silva-138-99-nb-classifier.qza)
-#   SKIP_TAXONOMY      "true" to stop after denoising      (default false)
-#   FWD_PRIMER         5' primer                           (default 926F AAACTYAAAKGAATTGRCGG)
-#   REV_PRIMER_RC      reverse complement of the 3' primer (default 1392R → GYACACACCGCCCGT)
-#   DISCARD_UNTRIMMED  "true" to drop reads with no primer (default false; SRA reads often
-#                      already have primers removed)
-#   TRIM_LEFT          bases to trim from the 5' end       (default 0)
-#   TRUNC_LEN          truncate reads to this length; shorter reads are dropped (default 400)
-#   MAX_EE             DADA2 max expected errors           (default 2.0)
-#   THREADS            threads for DADA2 and classifier    (default: all CPUs)
 set -euo pipefail
 
 OUT_DIR="${OUT_DIR:-/out}"
 REFDATA_DIR="${REFDATA_DIR:-/reference_data}"
 CLASSIFIER="${CLASSIFIER:-$REFDATA_DIR/silva-138-99-nb-classifier.qza}"
 SKIP_TAXONOMY="${SKIP_TAXONOMY:-false}"
-FWD_PRIMER="${FWD_PRIMER:-AAACTYAAAKGAATTGRCGG}"
-REV_PRIMER_RC="${REV_PRIMER_RC:-GYACACACCGCCCGT}"
-DISCARD_UNTRIMMED="${DISCARD_UNTRIMMED:-false}"
-TRIM_LEFT="${TRIM_LEFT:-0}"
-TRUNC_LEN="${TRUNC_LEN:-400}"
-MAX_EE="${MAX_EE:-2.0}"
 THREADS="${THREADS:-$(nproc)}"
 
+# Shorthands and the defaults QIIME doesn't provide. Exported so qiime_opts sees them.
+export CUTADAPT_FRONT="${CUTADAPT_FRONT:-${FWD_PRIMER:-AAACTYAAAKGAATTGRCGG}}"
+export CUTADAPT_ADAPTER="${CUTADAPT_ADAPTER:-${REV_PRIMER_RC:-GYACACACCGCCCGT}}"
+export DADA2_TRUNC_LEN="${DADA2_TRUNC_LEN:-${TRUNC_LEN:-400}}"
+[[ -n "${TRIM_LEFT:-}" ]] && export DADA2_TRIM_LEFT="${DADA2_TRIM_LEFT:-$TRIM_LEFT}"
+[[ -n "${MAX_EE:-}" ]] && export DADA2_MAX_EE="${DADA2_MAX_EE:-$MAX_EE}"
+[[ -n "${DISCARD_UNTRIMMED:-}" ]] &&
+    export CUTADAPT_DISCARD_UNTRIMMED="${CUTADAPT_DISCARD_UNTRIMMED:-$DISCARD_UNTRIMMED}"
+
 log() { echo "[pipeline $(date -u +%H:%M:%S)] $*" >&2; }
+
+# Build the QIIME options for one step from the <PREFIX>_* environment variables into the
+# array `opts`. The step's thread parameter gets $THREADS unless the step sets its own
+# (QIIME rejects an option given twice).
+qiime_opts() {
+    local prefix=$1 thread_param=$2 var name val
+    local -a vals
+    opts=()
+    local thread_var="${prefix}_${thread_param^^}"
+    thread_var="${thread_var//-/_}"
+    [[ -z "${!thread_var:-}" ]] && opts+=("--p-$thread_param" "$THREADS")
+    for var in $(compgen -e | grep "^${prefix}_" | sort); do
+        name="${var#"${prefix}_"}"
+        name="${name,,}"
+        name="${name//_/-}"
+        val="${!var}"
+        case "$val" in
+            true) opts+=("--p-$name") ;;
+            false) opts+=("--p-no-$name") ;;
+            *) IFS=, read -ra vals <<< "$val"; opts+=("--p-$name" "${vals[@]}") ;;
+        esac
+    done
+    log "$prefix options: ${opts[*]:-(QIIME defaults)}"
+}
 
 if [[ $# -eq 0 ]]; then
     echo "usage: pipeline <fastq.gz> [<fastq.gz> ...]" >&2
@@ -84,24 +127,18 @@ qiime tools import \
     --output-path "$QZA/demux.qza"
 
 log "trimming primers"
-discard_flag="--p-no-discard-untrimmed"
-[[ "$DISCARD_UNTRIMMED" == "true" ]] && discard_flag="--p-discard-untrimmed"
+qiime_opts CUTADAPT cores
 qiime cutadapt trim-single \
     --i-demultiplexed-sequences "$QZA/demux.qza" \
-    --p-front "$FWD_PRIMER" \
-    --p-adapter "$REV_PRIMER_RC" \
-    --p-cores "$THREADS" \
-    "$discard_flag" \
+    "${opts[@]}" \
     --o-trimmed-sequences "$QZA/trimmed.qza"
 
 # --- Denoise -------------------------------------------------------------------------
-log "denoising (dada2 denoise-pyro, trunc_len=$TRUNC_LEN)"
+log "denoising (dada2 denoise-pyro)"
+qiime_opts DADA2 n-threads
 qiime dada2 denoise-pyro \
     --i-demultiplexed-seqs "$QZA/trimmed.qza" \
-    --p-trim-left "$TRIM_LEFT" \
-    --p-trunc-len "$TRUNC_LEN" \
-    --p-max-ee "$MAX_EE" \
-    --p-n-threads "$THREADS" \
+    "${opts[@]}" \
     --o-table "$QZA/table.qza" \
     --o-representative-sequences "$QZA/rep-seqs.qza" \
     --o-denoising-stats "$QZA/denoising-stats.qza" \
@@ -110,10 +147,11 @@ qiime dada2 denoise-pyro \
 # --- Taxonomy ------------------------------------------------------------------------
 if [[ "$SKIP_TAXONOMY" != "true" ]]; then
     log "classifying with $(basename "$CLASSIFIER")"
+    qiime_opts CLASSIFY n-jobs
     qiime feature-classifier classify-sklearn \
         --i-classifier "$CLASSIFIER" \
         --i-reads "$QZA/rep-seqs.qza" \
-        --p-n-jobs "$THREADS" \
+        "${opts[@]}" \
         --o-classification "$QZA/taxonomy.qza"
 fi
 
