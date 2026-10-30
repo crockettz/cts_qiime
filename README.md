@@ -92,6 +92,10 @@ environmental data. Classifiers only work with the scikit-learn version they wer
 with, so moving to a newer QIIME needs a new bundle, a new refdata registration and a new
 image tag.
 
+### Silva Attribution
+
+Silva default and Silva diverse-weighted are from the SILVA rRNA database (https://www.arb-silva.de/). Users who utilize this tool's results in publications or other research outputs should appropriately cite the SILVA database and the specific release used.
+
 ## Example CTS job
 
 DADA2 must see every sample of a sequencing run together, so use one container.
