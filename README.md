@@ -56,12 +56,42 @@ samples, taxonomy skipped). Pushing a git tag also publishes
 
 ## Reference data
 
-The classifier is QIIME's pre-trained SILVA 138 99% Naive Bayes classifier for
-scikit-learn 1.4.2 (matches QIIME 2026.1):
-https://data.qiime2.org/classifiers/sklearn-1.4.2/silva/silva-138-99-nb-classifier.qza
+The refdata is one archive of QIIME's pre-trained Naive Bayes classifiers for
+scikit-learn 1.4.2, the version QIIME 2026.1 uses. Build it with
+`refdata/build_classifier_bundle.sh`, then register the resulting
+`cts_qiime_classifiers_sklearn-1.4.2.tar.gz` with the CTS **with unpack**. The files land
+at the top level of the mount, so a job picks one with
+`"CLASSIFIER": "/reference_data/<file>"`:
 
-Register it with the CTS as refdata (no unpacking). The pipeline expects it at
-`/reference_data/silva-138-99-nb-classifier.qza`; set `CLASSIFIER` if it lands elsewhere.
+| File | Database | Weighting |
+|---|---|---|
+| `silva-138-99-nb-classifier.qza` (default) | SILVA 138 99%, full-length | uniform |
+| `silva-138-99-nb-diverse-weighted-classifier.qza` | SILVA 138 99%, full-length | diverse environments |
+| `2024.09.backbone.full-length.nb.sklearn-1.4.2.qza` | Greengenes2 2024.09 backbone, full-length | uniform |
+| `gtdb_classifier_r220.qza` | GTDB r220 | uniform |
+| `gtdb_diverse_weighted_classifier_r220.qza` | GTDB r220 | diverse environments |
+
+**Size the job for the classifier.** QIIME unpacks the classifier into `$TMPDIR` and
+loads it into memory, so jobs need far more than the download size. Measured with
+`THREADS=1` on the 3-sample test data:
+
+| Classifier | Unpacked size | Peak memory |
+|---|---|---|
+| SILVA 99% (default) | 1.4 GB | 4.9 GB |
+| Greengenes2 full-length | 3.7 GB | 6.7 GB |
+| GTDB r220 diverse-weighted | 5.6 GB | 9.5 GB |
+| GTDB r220 | 8.1 GB | over 11 GB (not measured past that) |
+| SILVA 99% diverse-weighted | 9.7 GB | over 11 GB (not measured past that) |
+
+Allow temp disk of about twice the unpacked size. With more classifier jobs
+(`THREADS` or `CLASSIFY_N_JOBS` > 1), memory may grow, so keep `CLASSIFY_N_JOBS=1` for the
+two largest unless the job requests plenty of memory.
+
+`/reference_data/CLASSIFIERS.tsv` in the bundle lists each file's source URL and SHA-256.
+The V4 (515F–806R) and human-stool classifiers are left out because they don't suit V6–V8
+environmental data. Classifiers only work with the scikit-learn version they were trained
+with, so moving to a newer QIIME needs a new bundle, a new refdata registration and a new
+image tag.
 
 ## Example CTS job
 
