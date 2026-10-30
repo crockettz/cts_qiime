@@ -32,8 +32,7 @@ steps can be set as `<STEP>_<PARAM>`. STEP is `CUTADAPT` (`cutadapt trim-single`
 
 - Parameters you don't set aren't passed, so **QIIME's defaults apply**. See
   `qiime <step> --help` for the full lists.
-- `true`/`false` become `--p-x`/`--p-no-x`, and commas separate multiple values. CTS values
-  can't contain spaces.
+- `true`/`false` become `--p-x`/`--p-no-x`, and commas separate multiple values. 
 - Misspelled names fail with QIIME's "No such option … Did you mean" error. The options each
   step used are logged, and the `.qza` provenance records them.
 
