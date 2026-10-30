@@ -7,7 +7,8 @@ QIIME 2 (amplicon distribution, 2026.1) packaged for the KBase CDM Task Service 
   classification → export. Settings are environment variables; see the header of
   `pipeline.sh`. Defaults target the 926F/1392R primers.
 - Any other arguments are passed straight to `qiime`.
-- All scratch/config writes go to `$TMPDIR`; outputs go to `$OUT_DIR` (default `/out`):
+- All scratch/config writes go to a per-run directory under `$TMPDIR`, removed when the
+  run exits; outputs go to `$OUT_DIR` (default `/out`):
   - `qiime/*.qza`: QIIME artifacts
   - `export/feature-table.tsv` + `.biom`, `export/dna-sequences.fasta`,
     `export/taxonomy.tsv`, `export/denoising-stats.tsv`
@@ -102,7 +103,7 @@ DADA2 must see every sample of a sequencing run together, so use one container.
 
 ```json
 {
-  "cluster": "perlmutter-jaws",
+  "cluster": "kbase",
   "image": "ghcr.io/crockettz/cts_qiime@sha256:<digest>",
   "params": {
     "input_mount_point": "/in",
